@@ -2,7 +2,7 @@ MODEL:
   BACKBONE:
     FREEZE_AT: 0
     NAME: "build_resnet_backbone"
-  WEIGHTS: "detectron2://ImageNetPretrained/torchvision/R-50.pkl"
+  WEIGHTS: "/mnt/rcvnas2/datasets/HanwhaAIChallenge/checkpoints/oneformer/250_16_convnext_xl_oneformer_cityscapes_90k.pth"
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
   RESNETS:
@@ -14,9 +14,9 @@ MODEL:
     # NORM: "SyncBN"
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
-  TRAIN: ("coco_2017_train_panoptic_with_sem_seg",)
+  TRAIN: ("hanwha_train",)
   TEST_PANOPTIC: ("coco_2017_val_panoptic_with_sem_seg",)  # to evaluate instance and semantic performance as well
-  TEST_INSTANCE: ("coco_2017_val_panoptic2instance",)
+  TEST_INSTANCE:  ("hanwha_val",)
   TEST_SEMANTIC: ("coco_2017_val_panoptic_with_sem_seg",)
 SOLVER:
   IMS_PER_BATCH: 16

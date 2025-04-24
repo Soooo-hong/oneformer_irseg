@@ -2,9 +2,9 @@ MODEL:
   BACKBONE:
     FREEZE_AT: 0
     NAME: "build_resnet_backbone"
-  WEIGHTS: "detectron2://ImageNetPretrained/torchvision/R-50.pkl"
-  PIXEL_MEAN: [123.675, 116.280, 103.530]
-  PIXEL_STD: [58.395, 57.120, 57.375]
+  WEIGHTS: "/mnt/rcvnas2/datasets/HanwhaAIChallenge/checkpoints/oneformer/mapillary_pretrain_250_16_convnext_l_oneformer_cityscapes_90k.pth "
+  PIXEL_MEAN: [107.65,107.65,107.65]
+  PIXEL_STD: [44.55, 44.55, 44.55]
   RESNETS:
     DEPTH: 50
     STEM_TYPE: "basic"  # not used
@@ -14,12 +14,12 @@ MODEL:
     NORM: "SyncBN"  # use syncbn for cityscapes dataset
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
-  TRAIN: ("cityscapes_fine_panoptic_train",)
+  TRAIN: ("hanwha_train",)
   TEST_PANOPTIC: ("cityscapes_fine_panoptic_val",)
-  TEST_INSTANCE: ("cityscapes_fine_instance_seg_val",)
+  TEST_INSTANCE: ("hanwha_test_no_ann",)
   TEST_SEMANTIC: ("cityscapes_fine_sem_seg_val",)
 SOLVER:
-  IMS_PER_BATCH: 16
+  IMS_PER_BATCH: 1
   BASE_LR: 0.0001
   MAX_ITER: 90000
   WARMUP_FACTOR: 1.0
@@ -38,18 +38,18 @@ SOLVER:
 INPUT:
   MIN_SIZE_TRAIN: !!python/object/apply:eval ["[int(x * 0.1 * 1024) for x in range(5, 21)]"]
   MIN_SIZE_TRAIN_SAMPLING: "choice"
-  MIN_SIZE_TEST: 1024
+  MIN_SIZE_TEST: 640
   MAX_SIZE_TRAIN: 4096
   MAX_SIZE_TEST: 2048
   CROP:
     ENABLED: True
     TYPE: "absolute"
-    SIZE: (512, 1024)
+    SIZE: (640, 480)
     SINGLE_CATEGORY_MAX_AREA: 1.0
   COLOR_AUG_SSD: True
   SIZE_DIVISIBILITY: -1
   FORMAT: "RGB"
-  DATASET_MAPPER_NAME: "oneformer_unified"
+  DATASET_MAPPER_NAME: "custom_instance"
   MAX_SEQ_LEN: 77
   TASK_SEQ_LEN: 77
   TASK_PROB: 
@@ -59,7 +59,7 @@ TEST:
   EVAL_PERIOD: 5000
   AUG:
     ENABLED: False
-    MIN_SIZES: [512, 768, 1024, 1280, 1536, 1792]
+    MIN_SIZES: [512, 640,768, 1024, 1280, 1536, 1792]
     MAX_SIZE: 4096
     FLIP: True
 DATALOADER:

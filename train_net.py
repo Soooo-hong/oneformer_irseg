@@ -12,17 +12,21 @@ import copy
 import itertools
 import logging
 import os
+import time 
+import numpy as np 
 
 from collections import OrderedDict
 from typing import Any, Dict, List, Set
 
 import torch
 import warnings
+from pycocotools import mask as coco_mask
 
+from detectron2.data.datasets import register_coco_instances
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.data import MetadataCatalog, build_detection_train_loader
+from detectron2.data import MetadataCatalog, build_detection_train_loader,DatasetCatalog
 from detectron2.engine import (
     DefaultTrainer,
     default_argument_parser,
@@ -61,6 +65,7 @@ from oneformer import (
     add_dinat_config,
     add_convnext_config,
 )
+from datasets.custom_datasets.instance_coco_custom_dataset_mapper import InstanceCOCOCustomNewBaselineDatasetMapper
 
 from detectron2.utils.events import CommonMetricPrinter, JSONWriter
 from oneformer.utils.events import WandbWriter, setup_wandb
@@ -164,6 +169,9 @@ class Trainer(DefaultTrainer):
         elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_unified_lsj":
             mapper = COCOUnifiedNewBaselineDatasetMapper(cfg, True)
             return build_detection_train_loader(cfg, mapper=mapper)
+        elif cfg.INPUT.DATASET_MAPPER_NAME == "custom_instance" : 
+            mapper = InstanceCOCOCustomNewBaselineDatasetMapper(cfg, True)
+            return build_detection_train_loader(cfg, mapper=mapper)
         else:
             mapper = None
             return build_detection_train_loader(cfg, mapper=mapper)
@@ -190,7 +198,7 @@ class Trainer(DefaultTrainer):
             # It may not always print what you want to see, since it prints "common" metrics only.
             CommonMetricPrinter(self.max_iter),
             JSONWriter(os.path.join(self.cfg.OUTPUT_DIR, "metrics.json")),
-            WandbWriter(),
+            # WandbWriter(),
         ]
 
     @classmethod
@@ -364,8 +372,41 @@ class Trainer(DefaultTrainer):
                     results[dataset_name] = {}
                     continue
             results_i = inference_on_dataset(model, data_loader, evaluator)
-
             results[dataset_name] = results_i
+            # processed_results = []
+
+            # for image_id, result_list in all_results.items():
+            #     obj_id = 0  # 객체마다 unique한 id 부여
+            #     for outputs, infer_time in result_list:
+            #         instances = outputs["instances"].to("cpu")
+            #         image_height, image_width = instances.image_size
+
+            #         for idx in range(len(instances)):
+            #             mask = instances.pred_masks[idx].numpy()
+            #             rle = coco_mask.encode(np.asfortranarray(mask.astype(np.uint8)))
+            #             area = coco_mask.area(rle)
+            #             x1, y1, x2, y2 = instances.pred_boxes[idx].tensor[0]
+            #             bbox = [int(x1), int(y1), int(x2), int(y2)]
+            #             score = float(instances.scores[idx])
+            #             class_id = int(instances.pred_classes[idx])
+
+            #             prediction = {
+            #                 "image_id": image_id,
+            #                 "inference_time_ms": infer_time,
+            #                 "score": score,
+            #                 "category_id": class_id,
+            #                 "segmentation": {
+            #                     "size": [int(image_height), int(image_width)],
+            #                     "counts": rle['counts']
+            #                 },
+            #                 "area": int(area),
+            #                 "bbox": bbox,
+            #                 "id": obj_id,
+            #                 "iscrowd": 0
+            #             }
+
+            #             processed_results.append(prediction)
+            #             obj_id += 1
             if comm.is_main_process():
                 assert isinstance(
                     results_i, dict
@@ -396,14 +437,77 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     cfg.freeze()
     default_setup(cfg, args)
-    if not args.eval_only:
-        setup_wandb(cfg, args)
+    # if not args.eval_only:
+    #     setup_wandb(cfg, args)
     # Setup logger for "oneformer" module
     setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="oneformer")
     return cfg
 
+def load_images_from_folder(folder_path):
+    img_list = []
+    for fname in os.listdir(folder_path):
+        if fname.lower().endswith((".jpg", ".png", ".jpeg")):
+            img_path = os.path.join(folder_path, fname)
+            img_list.append({
+                "file_name": img_path,
+                "image_id": fname,  # 고유 ID
+                "height": 480,        # dummy (inference에는 필요 없음)
+                "width": 640
+            })
+    return img_list
 
 def main(args):
+    thing_classes = ["person", "car", "truck", "bus", "bicycle", "bike", "extra_vehicle", "dog"]
+    register_coco_instances(
+    "hanwha_train",
+    {
+        "thing_classes": thing_classes
+    },
+    "/mnt/rcvnas2/datasets/HanwhaAIChallenge/annotations/instances_train_filtered2025.json",
+    "/mnt/rcvnas2/datasets/HanwhaAIChallenge/train2025"
+    )
+    register_coco_instances(
+        "hanwha_val",
+        {
+            "thing_classes": thing_classes
+        },
+        "/mnt/rcvnas2/datasets/HanwhaAIChallenge/annotations/instances_val2025.json",
+        "/mnt/rcvnas2/datasets/HanwhaAIChallenge/val2025"
+    )
+    register_coco_instances(
+        "hanwha_train_aug",
+        {
+            "thing_classes": thing_classes
+        },
+        "/mnt/rcvnas2/datasets/HanwhaAIChallenge/annotations/filtered_bicycle_only.json",
+        "/mnt/rcvnas2/datasets/HanwhaAIChallenge/bicycle_only_images"
+    )
+    dataset_id_to_contiguous_id = {i + 1: i for i in range(len(thing_classes))}  # id: 1~8
+    contiguous_id_to_dataset_id = {v: k for k, v in dataset_id_to_contiguous_id.items()}
+
+    # train metadata
+    train_meta = MetadataCatalog.get("hanwha_train")
+    train_meta.thing_dataset_id_to_contiguous_id = dataset_id_to_contiguous_id
+    train_meta.thing_contiguous_id_to_dataset_id = contiguous_id_to_dataset_id
+    train_meta.ignore_label = 255
+    train_meta.stuff_classes =[]
+    
+    train_aug_meta = MetadataCatalog.get("hanwha_train_aug")
+    train_aug_meta.thing_dataset_id_to_contiguous_id = dataset_id_to_contiguous_id
+    train_aug_meta.thing_contiguous_id_to_dataset_id = contiguous_id_to_dataset_id
+    train_aug_meta.ignore_label = 255
+    train_aug_meta.stuff_classes =[]
+    
+    # val metadata
+    val_meta = MetadataCatalog.get("hanwha_val")
+    val_meta.thing_dataset_id_to_contiguous_id = dataset_id_to_contiguous_id
+    val_meta.thing_contiguous_id_to_dataset_id = contiguous_id_to_dataset_id
+    val_meta.ignore_label = 255
+    val_meta.stuff_classes =[]
+    
+    DatasetCatalog.register("hanwha_test_no_ann", lambda: load_images_from_folder("/mnt/rcvnas2/datasets/HanwhaAIChallenge/test_open2025"))
+    MetadataCatalog.get("hanwha_test_no_ann").thing_classes = thing_classes  # 이전에 사용한 클래스
+    MetadataCatalog.get("hanwha_test_no_ann").evaluator_type = "coco"
     cfg = setup(args)
 
     if args.eval_only:
@@ -422,6 +526,8 @@ def main(args):
 
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
+    for param in trainer.model.backbone.parameters():
+        param.requires_grad = False
     if args.machine_rank == 0:
         net_params = sum(p.numel() for p in trainer.model.parameters() if p.requires_grad)
         print("Total Params: {} M".format(net_params/1e6))

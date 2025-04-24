@@ -5,6 +5,8 @@ extras/
 # output dir
 .DS_Store
 output
+outputs
+wandb
 instant_test_output
 inference_test_output
 
